@@ -569,13 +569,22 @@ Yes, with photos of mountains and woods. The home screen looks for a photo named
 
 So a rainy evening shows `night_rain.jpg`. If that photo is missing it tries `night_clear.jpg`, then the plain Dusk gradient. The photo is cropped to the screen, with a dark veil over it so the clock and tiles stay easy to read, and the photographer is credited at the bottom right.
 
-The TV never downloads the photos and holds no API key. A script on your computer downloads 20 photos from [Pixabay](https://pixabay.com) and copies them to the TV with adb:
+The 20 photos are in the `wallpapers` folder of this repository, and `install.sh` copies them to the TV (about 5 MB) as part of the install. A TV that already has photos keeps them, so ones you picked yourself stay. To change that:
+
+```sh
+WALLPAPERS=off sh install.sh <TV_IP>      # don't copy the photos
+WALLPAPERS=reset sh install.sh <TV_IP>    # replace the TV's photos with these
+```
+
+The TV never downloads the photos and holds no API key. **About the license:** they are from [Pixabay](https://pixabay.com) and are covered by its license, not this project's. That license lets you use them freely, but it does not allow handing them out as standalone wallpapers. They are in this repository at the fork owner's risk; see [`wallpapers/README.md`](wallpapers/README.md). If you reuse the project, replace them with photos you may redistribute, or delete the folder and the home screen keeps its plain gradient.
+
+To pick different ones, a script on your computer downloads 20 new photos from Pixabay and copies them to the TV with adb:
 
 ```sh
 PIXABAY_KEY=your-key python3 fetch-wallpapers.py <TV_IP>
 ```
 
-The key is free: sign up at pixabay.com and it is shown on https://pixabay.com/api/docs/. It needs only `python3` and `adb`. The photos are saved in `out/wallpapers`, the searches are kept for 24 hours as Pixabay asks, and running it again picks the best matches again. A normal key gives photos 1280 pixels wide, so they are slightly soft on a 1080p TV; Pixabay's "full API access" gives 1920 pixels and the script uses them when it can. The searches are only a guide, so check the photos and swap any you don't like.
+The key is free: sign up at pixabay.com and it is shown on https://pixabay.com/api/docs/. It needs only `python3` and `adb`. The photos are saved in `out/wallpapers` (a build clears that folder), the searches are kept for 24 hours as Pixabay asks, and running it again picks the best matches again. A normal key gives photos 1280 pixels wide, so they are slightly soft on a 1080p TV; Pixabay's "full API access" gives 1920 pixels and the script uses them when it can. The searches are only a guide, so check the photos and swap any you don't like. To make new ones the defaults for everyone who installs, copy them (and `credits.txt`) into the `wallpapers` folder.
 
 You can also use your own pictures: copy JPEGs with those names to `/sdcard/Android/data/com.ansub.tvhome/files/wallpapers/` with `adb push`, and add a `credits.txt` with lines like `night_rain.jpg|Photographer name` if you want a credit shown.
 

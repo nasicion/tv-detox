@@ -8,6 +8,8 @@
 #   WEATHER="52.52,13.41" sh install.sh <TV_IP>  weather for that place (latitude,longitude)
 #   WEATHER=off sh install.sh <TV_IP>            no weather panel
 #   (WEATHER unset or auto: the place comes from the TV's IP address, via ipapi.co)
+#   WALLPAPERS=off sh install.sh <TV_IP>         don't copy the weather wallpaper photos (about 5 MB)
+#   WALLPAPERS=reset sh install.sh <TV_IP>       replace photos already on the TV with these
 #   FAKE_INPUT=1 sh install.sh <emulator>        testing only: add a throwaway TV input, so an
 #                                                emulator with no HDMI ports still has one to draw
 #
@@ -55,6 +57,23 @@ if ! out=$(adb -s "$TV" install -r "$APK" 2>&1); then
                            adb -s "$TV" uninstall com.ansub.tvhome >/dev/null; adb -s "$TV" install "$APK" ;;
     *) echo "$out" >&2; exit 1 ;;
   esac
+fi
+
+# The weather wallpaper photos (the wallpapers folder next to this script) go to the home screen's own
+# folder on the TV. A TV that already has photos keeps them, so ones you chose stay; WALLPAPERS=reset
+# replaces them and WALLPAPERS=off skips this. Failing to copy them only leaves the plain gradient.
+PHOTOS=/sdcard/Android/data/com.ansub.tvhome/files/wallpapers
+if [ "$WALLPAPERS" != off ] && [ -f wallpapers/credits.txt ]; then
+  have=$(adb -s "$TV" shell "ls $PHOTOS/*.jpg 2>/dev/null | wc -l" | tr -d '\r ')
+  if [ "$have" = 0 ] || [ "$WALLPAPERS" = reset ]; then
+    echo "Copying the weather wallpapers (about 5 MB)…"
+    adb -s "$TV" shell "mkdir -p $PHOTOS" || true
+    for f in wallpapers/*.jpg wallpapers/credits.txt; do
+      adb -s "$TV" push "$f" "$PHOTOS/" >/dev/null || { echo "Couldn't copy $f. The plain gradient stays where a photo is missing." >&2; break; }
+    done
+  else
+    echo "The TV already has wallpaper photos, so they stay. WALLPAPERS=reset replaces them."
+  fi
 fi
 
 # Testing only: a TV input service with nothing behind it, for an emulator, which has no HDMI
