@@ -15,8 +15,13 @@ import android.content.pm.ApplicationInfo;
 import android.content.pm.PackageManager;
 import android.content.pm.ResolveInfo;
 import android.graphics.Bitmap;
+import android.graphics.BitmapFactory;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.graphics.LinearGradient;
+import android.graphics.Paint;
+import android.graphics.Rect;
+import android.graphics.Shader;
 import android.graphics.Typeface;
 import android.graphics.drawable.BitmapDrawable;
 import android.graphics.drawable.ColorDrawable;
@@ -93,7 +98,7 @@ public class MainActivity extends Activity {
     private static final String ADD = "add";
     private static final String[] EDIT_ITEMS = {"Move", "Replace", "Remove from home", "Uninstall"};
     private static final String[] EDIT_ITEMS_SYSTEM = {"Move", "Replace", "Remove from home", "App info"};
-    private static final int PER_ROW = 6, MAX_INPUTS = 4;
+    private static final int PER_ROW = 10, MAX_INPUTS = 4;
 
     // Settings shortcuts: name, label, icon. Tile keys are QUICK + name.
     private static final String QUICK = "quick:";
@@ -107,6 +112,11 @@ public class MainActivity extends Activity {
     // and the clock override ("12" or "24"; absent follows the TV).
     private static final String PREF_INPUT_NAMES = "inputnames", PREF_HIDDEN_INPUTS = "hiddeninputs";
     private static final String PREF_CLOCK = "clock", PREF_FAKE_INPUTS = "fakeinputs";
+    // The weather panel: the place setting ("lat,lon", "off", or absent for the IP-based place), the last
+    // forecast with when it came, and the place found from the IP address with when it was found.
+    private static final String PREF_WEATHER = "weather", PREF_WEATHER_JSON = "weatherjsonc", PREF_WEATHER_AT = "weatherat"; // "c": Celsius; older saved forecasts were Fahrenheit
+    private static final String PREF_IP_PLACE = "ipplace", PREF_IP_AT = "ipplaceat";
+    private static final int WEATHER_TOP = 380; // centred, under the clock
     // The throwaway input install.sh adds with FAKE_INPUT=1. It has no HDMI port behind it; it is
     // there so an emulator, which has no inputs of its own, still has a tile to test with.
     private static final String FAKE_INPUT_PKG = "com.ansub.fakeinput";
@@ -135,7 +145,7 @@ public class MainActivity extends Activity {
     // white labels stay easy to read. Only colours, no images, so every one costs the same as Dusk,
     // the default.
     private static final String[] WALLPAPER_NAMES = {"Dusk", "Midnight", "Plum", "Forest", "Graphite", "Ocean", "Ember",
-            "Sunset", "Lagoon", "Aurora", "Coral", "Iris", "Meadow", "Gold"};
+            "Sunset", "Lagoon", "Aurora", "Coral", "Iris", "Meadow", "Gold", "Weather"};
     private static final int[][] WALLPAPERS = {
         {0xFF15100F, 0xFF0A0809, 0xFF050405, 0x36FF8048, 0x2EAA3C8C},
         {0xFF0E1220, 0xFF080A13, 0xFF040509, 0x384A6CFF, 0x2E5A3CC8},
@@ -151,6 +161,7 @@ public class MainActivity extends Activity {
         {0xFF5A3CAE, 0xFF3A2A84, 0xFF16123A, 0x90C080FF, 0x804A7CFF},
         {0xFF2E6E4C, 0xFF1C4A40, 0xFF0A201E, 0x90A8E070, 0x6030A8A8},
         {0xFFB07624, 0xFF86401E, 0xFF2A1410, 0x90FFD060, 0x70FF5040},
+        {0xFF1C4A5E, 0xFF0F2E3A, 0xFF08141C, 0x9060C0E0, 0x8040A070}, // Weather: only the dot; the photos are files
     };
     private float scale = 1f;
 
@@ -171,6 +182,20 @@ public class MainActivity extends Activity {
     // The tile OK went down on. An app that closes on OK's key-down (Netflix's "Exit") hands the matching
     // key-up to the tile still focused here, so a key-up only opens the app it went down on (#30).
     private String okDownKey;
+
+    private LinearLayout weatherPanel;
+    private ImageView weatherNowIcon;
+    private TextView weatherNow, weatherCond;
+    private final TextView[] weatherDay = new TextView[Weather.DAYS], weatherTemps = new TextView[Weather.DAYS];
+    private final ImageView[] weatherIcon = new ImageView[Weather.DAYS];
+    private boolean weatherBusy; // a forecast is being fetched
+    // Fetches a new forecast every MAX_AGE_MS while Home is in front (onResume starts it, onPause stops it).
+    private final Runnable weatherTick = new Runnable() {
+        @Override public void run() {
+            refreshWeather(false);
+            getWindow().getDecorView().postDelayed(this, Weather.MAX_AGE_MS);
+        }
+    };
 
     // Apps installed, removed or updated. This often lands once Home is already back in front (an app
     // uninstalled from the menu is gone only after Android's prompt has closed), so catch up then.
@@ -218,8 +243,9 @@ public class MainActivity extends Activity {
         TextClock date = clock(day, day, px(30), 0xA8FFFFFF, regular);
         // The clock follows the TV unless --es clock 12 or 24 says otherwise.
         String clockPref = prefs().getString(PREF_CLOCK, null);
-        TextClock time = clock("24".equals(clockPref) ? "H:mm" : "h:mm", "12".equals(clockPref) ? "h:mm" : "H:mm",
-                px(176), Color.WHITE, semibold);
+        // Glass digits: see-through, lit from the top, with a thin bright rim.
+        TextClock time = clock(new GlassClock(this), "24".equals(clockPref) ? "H:mm" : "h:mm",
+                "12".equals(clockPref) ? "h:mm" : "H:mm", px(222), Color.WHITE, semibold);
         time.setLetterSpacing(-0.028f);
         time.setFontFeatureSettings("tnum");
         time.setIncludeFontPadding(false);
@@ -227,14 +253,17 @@ public class MainActivity extends Activity {
         // or "0:00" to "9:59" (one digit less) cuts a long date off.
         clock.addView(date, new LinearLayout.LayoutParams(-2, -2));
         LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -2);
-        tp.topMargin = px(-20); // pull the big digits up under the date
+        tp.topMargin = px(-25); // pull the big digits up under the date
         clock.addView(time, tp);
-        root.addView(clock, at(px(MARGIN), px(92), -2, -2));
+        clock.setGravity(Gravity.CENTER_HORIZONTAL); // top centre
+        root.addView(clock, at(0, px(92), getResources().getDisplayMetrics().widthPixels, -2));
 
         moveHint = text(px(24), 0xA8FFFFFF, regular);
         moveHint.setText(Strings.t("Use the arrows to move it, then press OK"));
         moveHint.setVisibility(View.GONE);
         root.addView(moveHint, at(px(MARGIN), px(ROW1_TOP - 64), -2, -2));
+
+        buildWeather();
 
         setContentView(scroller);
 
@@ -270,6 +299,7 @@ public class MainActivity extends Activity {
         if (saveConfig(intent)) {
             if (clock) recreate();
             else buildTiles();
+            if (intent.hasExtra("weather")) refreshWeather(true);
         }
     }
 
@@ -282,7 +312,8 @@ public class MainActivity extends Activity {
         String quick = intent == null ? null : intent.getStringExtra("quick");
         String clock = intent == null ? null : intent.getStringExtra("clock");
         String fake = intent == null ? null : intent.getStringExtra("fakeinputs");
-        if (apps == null && quick == null && clock == null && fake == null) return false;
+        String weather = intent == null ? null : intent.getStringExtra("weather");
+        if (apps == null && quick == null && clock == null && fake == null && weather == null) return false;
         SharedPreferences prefs = getSharedPreferences(PREFS, 0);
         String stamp = intent.getStringExtra("stamp");
         if (stamp != null && stamp.equals(prefs.getString("stamp", null))) return false;
@@ -316,6 +347,20 @@ public class MainActivity extends Activity {
                     if (it.next().startsWith(FAKE_INPUT_PKG + "/")) it.remove();
                 e.putString(PREF_HIDDEN_INPUTS, android.text.TextUtils.join("\n", new TreeSet<>(hidden)));
             } else e.remove(PREF_FAKE_INPUTS);
+        }
+        // "lat,lon" sets the weather place; "off" takes the panel away; "auto" (or empty) finds the place
+        // from the IP address. A new setting drops the old forecast.
+        if (weather != null) {
+            weather = weather.trim();
+            boolean auto = weather.isEmpty() || weather.equalsIgnoreCase("auto");
+            boolean off = weather.equalsIgnoreCase("off");
+            String place = Weather.location(weather); // null for auto, off, or anything unreadable
+            if (auto || off || place != null) {
+                e.remove(PREF_WEATHER_JSON).remove(PREF_WEATHER_AT);
+                if (off) e.putString(PREF_WEATHER, "off");
+                else if (place != null) e.putString(PREF_WEATHER, place);
+                else e.remove(PREF_WEATHER);
+            }
         }
         e.apply();
         dirty = true;
@@ -358,6 +403,8 @@ public class MainActivity extends Activity {
         // Only counted as opened once it has stayed up a moment, so a crash right after opening still
         // counts as a failed launch.
         getWindow().getDecorView().postDelayed(homeOk, 1500);
+        refreshWeather(false);
+        getWindow().getDecorView().postDelayed(weatherTick, Weather.MAX_AGE_MS);
     }
 
     private final Runnable homeOk = () -> HomeButton.onHomeOk(this);
@@ -367,7 +414,137 @@ public class MainActivity extends Activity {
         super.onPause();
         // Left normally (an app or Settings opened), so it didn't crash.
         getWindow().getDecorView().removeCallbacks(homeOk);
+        getWindow().getDecorView().removeCallbacks(weatherTick);
         HomeButton.onHomeOk(this);
+    }
+
+    // The weather, centred under the clock: one line with the icon, the temperature now and the
+    // conditions in words, then one line with the next three days. No background. It stays hidden
+    // until a place is set.
+    private void buildWeather() {
+        LinearLayout panel = vertical();
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
+
+        LinearLayout now = new LinearLayout(this);
+        now.setGravity(Gravity.CENTER);
+        weatherNowIcon = new ImageView(this);
+        now.addView(weatherNowIcon, new LinearLayout.LayoutParams(px(79), px(79)));
+        weatherNow = shadowed(text(px(58), Color.WHITE, semibold));
+        LinearLayout.LayoutParams tp = new LinearLayout.LayoutParams(-2, -2);
+        tp.leftMargin = px(16);
+        now.addView(weatherNow, tp);
+        weatherCond = shadowed(text(px(32), 0xE0FFFFFF, regular));
+        LinearLayout.LayoutParams cp = new LinearLayout.LayoutParams(-2, -2);
+        cp.leftMargin = px(24);
+        now.addView(weatherCond, cp);
+        panel.addView(now, new LinearLayout.LayoutParams(-2, px(79)));
+
+        // The next three days, side by side: day, small icon, high / low.
+        LinearLayout days = new LinearLayout(this);
+        days.setGravity(Gravity.CENTER);
+        for (int i = 0; i < Weather.DAYS; i++) {
+            LinearLayout d = new LinearLayout(this);
+            d.setGravity(Gravity.CENTER_VERTICAL);
+            weatherDay[i] = shadowed(text(px(25), 0xA8FFFFFF, regular));
+            weatherIcon[i] = new ImageView(this);
+            weatherTemps[i] = shadowed(text(px(25), 0xE0FFFFFF, regular));
+            d.addView(weatherDay[i], new LinearLayout.LayoutParams(-2, -2));
+            LinearLayout.LayoutParams ip = new LinearLayout.LayoutParams(px(44), px(44));
+            ip.leftMargin = px(10);
+            d.addView(weatherIcon[i], ip);
+            LinearLayout.LayoutParams hp = new LinearLayout.LayoutParams(-2, -2);
+            hp.leftMargin = px(10);
+            d.addView(weatherTemps[i], hp);
+            LinearLayout.LayoutParams dp = new LinearLayout.LayoutParams(-2, -2);
+            if (i > 0) dp.leftMargin = px(44);
+            days.addView(d, dp);
+        }
+        LinearLayout.LayoutParams dl = new LinearLayout.LayoutParams(-2, -2);
+        dl.topMargin = px(14);
+        panel.addView(days, dl);
+
+        weatherPanel = panel;
+        panel.setVisibility(View.GONE);
+        root.addView(panel, at(0, px(WEATHER_TOP), getResources().getDisplayMetrics().widthPixels, -2));
+
+        photoCredit = text(px(20), 0x99FFFFFF, regular);
+        photoCredit.setVisibility(View.GONE);
+        FrameLayout.LayoutParams cr = new FrameLayout.LayoutParams(-2, -2, Gravity.TOP | Gravity.END);
+        cr.topMargin = px(1018);
+        cr.rightMargin = px(MARGIN);
+        root.addView(photoCredit, cr);
+    }
+
+    private TextView shadowed(TextView t) {
+        t.setShadowLayer(px(6), 0, px(2), 0xB3000000);
+        return t;
+    }
+
+    private LinearLayout vertical() {
+        LinearLayout l = new LinearLayout(this);
+        l.setOrientation(LinearLayout.VERTICAL);
+        l.setGravity(Gravity.CENTER_HORIZONTAL);
+        return l;
+    }
+
+    // Shows the saved forecast at once, then fetches a new one if it is older than MAX_AGE_MS (or if
+    // force). A failed fetch keeps what is showing, so a Wi-Fi drop doesn't blank the panel. The panel
+    // only shows once a forecast has come in.
+    private void refreshWeather(boolean force) {
+        final String setting = prefs().getString(PREF_WEATHER, null); // null: place from the IP address
+        if ("off".equals(setting)) {
+            weatherPanel.setVisibility(View.GONE);
+            return;
+        }
+        String saved = prefs().getString(PREF_WEATHER_JSON, null);
+        if (saved != null) showWeather(saved);
+        long at = prefs().getLong(PREF_WEATHER_AT, 0);
+        boolean fresh = saved != null && System.currentTimeMillis() - at < Weather.MAX_AGE_MS;
+        if (weatherBusy || (fresh && !force)) return;
+        weatherBusy = true;
+        new Thread(() -> {
+            String place = setting != null ? setting : ipPlace();
+            String json = null;
+            if (place != null) try { json = Weather.fetch(place); } catch (Exception ignored) {}
+            final String got = json;
+            runOnUiThread(() -> {
+                weatherBusy = false;
+                if (got == null) return;
+                prefs().edit().putString(PREF_WEATHER_JSON, got)
+                        .putLong(PREF_WEATHER_AT, System.currentTimeMillis()).apply();
+                showWeather(got);
+            });
+        }).start();
+    }
+
+    // The place from the IP address, looked up once a day. A failed lookup keeps the last place found.
+    // Runs on the fetch thread, never the UI thread.
+    private String ipPlace() {
+        SharedPreferences p = prefs();
+        String saved = p.getString(PREF_IP_PLACE, null);
+        if (saved != null && System.currentTimeMillis() - p.getLong(PREF_IP_AT, 0) < Weather.IP_MAX_AGE_MS)
+            return saved;
+        String found = Weather.locateByIp();
+        if (found == null) return saved;
+        p.edit().putString(PREF_IP_PLACE, found).putLong(PREF_IP_AT, System.currentTimeMillis()).apply();
+        return found;
+    }
+
+    private void showWeather(String json) {
+        try {
+            Weather.Forecast f = Weather.parse(json);
+            weatherPanel.setVisibility(View.VISIBLE);
+            weatherNowIcon.setImageDrawable(Weather.icon(f.nowCode));
+            weatherNow.setText(f.nowTemp + "°");
+            weatherCond.setText(Strings.t(Weather.condition(f.nowCode)));
+            lastForecast = f;
+            refreshPhotoWallpaper();
+            for (int i = 0; i < Weather.DAYS; i++) {
+                weatherDay[i].setText(f.day[i]);
+                weatherIcon[i].setImageDrawable(Weather.icon(f.code[i]));
+                weatherTemps[i].setText(f.max[i] + "° / " + f.min[i] + "°");
+            }
+        } catch (Exception ignored) {} // a saved forecast that won't read: keep the panel as it was
     }
 
     // Back from a menu or a window on top (like the uninstall prompt): catch up on apps that changed.
@@ -449,14 +626,143 @@ public class MainActivity extends Activity {
         }
     }
 
-    // The saved wallpaper, as an index into WALLPAPERS (Dusk if none is saved).
+    // The saved wallpaper, as an index into WALLPAPERS. Weather if photos were pushed to the TV and
+    // none was picked yet; otherwise Dusk if none is saved.
     private int wallpaper() {
         String saved = getSharedPreferences(PREFS, 0).getString("wallpaper", null);
+        if (saved == null && photoDir() != null) saved = WEATHER_WALLPAPER;
         return Math.max(0, Arrays.asList(WALLPAPER_NAMES).indexOf(saved));
     }
 
     private void showWallpaper(int i) {
+        photoToken++; // a photo still loading for an earlier pick must not land on top of this one
+        if (WEATHER_WALLPAPER.equals(WALLPAPER_NAMES[i])) {
+            shownPhoto = null;
+            showPhotoWallpaper();
+            return;
+        }
+        shownPhoto = null;
+        hideCredit();
         getWindow().setBackgroundDrawable(background(WALLPAPERS[i]));
+    }
+
+    // Weather wallpaper: photos named <morning|noon|afternoon|night>_<clear|cloudy|rain|snow|fog>.jpg,
+    // pushed to the TV by fetch-wallpapers.py. The TV never talks to Pixabay, and no key is on it.
+    private static final String WEATHER_WALLPAPER = "Weather";
+    private Weather.Forecast lastForecast;
+    private String shownPhoto; // the photo on screen, so the same one isn't loaded again
+    private int photoToken;
+    private TextView photoCredit;
+
+    // The folder with the photos, or null if it has none.
+    private File photoDir() {
+        File base = getExternalFilesDir(null);
+        File dir = base == null ? null : new File(base, "wallpapers");
+        String[] names = dir == null ? null : dir.list((d, n) -> n.endsWith(".jpg"));
+        return names != null && names.length > 0 ? dir : null;
+    }
+
+    // Called when the forecast or the time of day may have changed.
+    private void refreshPhotoWallpaper() {
+        String saved = getSharedPreferences(PREFS, 0).getString("wallpaper", null);
+        if (WEATHER_WALLPAPER.equals(saved) || (saved == null && photoDir() != null)) showPhotoWallpaper();
+    }
+
+    private void showPhotoWallpaper() {
+        File dir = photoDir();
+        Weather.Forecast f = lastForecast;
+        if (f == null) try {
+            String saved = prefs().getString(PREF_WEATHER_JSON, null);
+            if (saved != null) f = Weather.parse(saved);
+        } catch (Exception ignored) {}
+        File pick = null;
+        if (dir != null && f != null) {
+            String slot = Weather.slot(f, System.currentTimeMillis()), kind = Weather.bucket(f.nowCode);
+            for (String name : new String[] {slot + "_" + kind, slot + "_clear"}) {
+                File c = new File(dir, name + ".jpg");
+                if (c.isFile()) { pick = c; break; }
+            }
+        }
+        if (pick == null) { // no photo for this weather yet: the plain wallpaper
+            if ("".equals(shownPhoto)) return; // already showing the plain one
+            shownPhoto = "";
+            hideCredit();
+            getWindow().setBackgroundDrawable(background(WALLPAPERS[0]));
+            return;
+        }
+        if (pick.getPath().equals(shownPhoto)) return;
+        shownPhoto = pick.getPath();
+        final File file = pick;
+        final int token = ++photoToken;
+        new Thread(() -> {
+            final Drawable d = photoBackground(file);
+            runOnUiThread(() -> {
+                if (token != photoToken || d == null) return;
+                getWindow().setBackgroundDrawable(d);
+                showCredit(file);
+            });
+        }).start();
+    }
+
+    // The photo cropped to fill the screen, with a dark veil over it so the white text stays easy to read.
+    // One screen-sized picture, on the GPU on Android 8+, like the colour wallpapers.
+    private Drawable photoBackground(File file) {
+        int w = getResources().getDisplayMetrics().widthPixels, h = getResources().getDisplayMetrics().heightPixels;
+        try {
+            BitmapFactory.Options o = new BitmapFactory.Options();
+            o.inJustDecodeBounds = true;
+            BitmapFactory.decodeFile(file.getPath(), o);
+            o.inSampleSize = Math.max(1, Math.min(o.outWidth / w, o.outHeight / h));
+            o.inJustDecodeBounds = false;
+            Bitmap src = BitmapFactory.decodeFile(file.getPath(), o);
+            if (src == null) return null;
+            Bitmap bm = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
+            Canvas c = new Canvas(bm);
+            float sa = src.getWidth() / (float) src.getHeight(), da = w / (float) h;
+            Rect from;
+            if (sa > da) {
+                int nw = Math.round(src.getHeight() * da), x = (src.getWidth() - nw) / 2;
+                from = new Rect(x, 0, x + nw, src.getHeight());
+            } else {
+                int nh = Math.round(src.getWidth() / da), y = (src.getHeight() - nh) / 2;
+                from = new Rect(0, y, src.getWidth(), y + nh);
+            }
+            Paint p = new Paint(Paint.FILTER_BITMAP_FLAG);
+            c.drawBitmap(src, from, new Rect(0, 0, w, h), p);
+            src.recycle();
+            Paint veil = new Paint();
+            veil.setShader(new LinearGradient(0, 0, 0, h, new int[] {0x9E000000, 0x73000000, 0xB8000000},
+                    new float[] {0f, 0.45f, 1f}, Shader.TileMode.CLAMP));
+            c.drawRect(0, 0, w, h, veil);
+            if (android.os.Build.VERSION.SDK_INT >= 26) {
+                Bitmap hw = bm.copy(Bitmap.Config.HARDWARE, false);
+                if (hw != null) {
+                    bm.recycle();
+                    bm = hw;
+                }
+            }
+            return new BitmapDrawable(getResources(), bm);
+        } catch (Throwable t) {
+            return null; // too big or unreadable: the wallpaper stays as it was
+        }
+    }
+
+    private void hideCredit() {
+        if (photoCredit != null) photoCredit.setVisibility(View.GONE); // not built yet on the first wallpaper
+    }
+
+    // Credit for the photo, bottom right: credits.txt next to the photos has "file|photographer".
+    private void showCredit(File photo) {
+        String who = null;
+        try (java.io.BufferedReader r = new java.io.BufferedReader(new java.io.FileReader(new File(photo.getParentFile(), "credits.txt")))) {
+            for (String line; (line = r.readLine()) != null; ) {
+                String[] part = line.split("\\|");
+                if (part.length >= 2 && part[0].equals(photo.getName())) { who = part[1]; break; }
+            }
+        } catch (Exception ignored) {}
+        if (who == null) { hideCredit(); return; }
+        photoCredit.setText("Photo: " + who + " / Pixabay");
+        photoCredit.setVisibility(View.VISIBLE);
     }
 
     // The wallpapers, each with a small dot of its colours. Moving through the list shows each one
@@ -518,7 +824,7 @@ public class MainActivity extends Activity {
         tileH = h;
 
         List<String> apps = appList(pm);
-        // Apps fill rows of six. With more rows the grid starts higher, so up to two rows of apps and
+        // Apps fill rows of ten. With more rows the grid starts higher, so up to two rows of apps and
         // the bottom row still fit on screen; past that the page scrolls.
         int launchable = 0;
         for (String pkg : apps) if (launchIntent(pm, pkg) != null) launchable++;
@@ -526,7 +832,7 @@ public class MainActivity extends Activity {
         gridTop = Math.max(px(GRID_MIN_TOP), px(ROW1_TOP) - (rows - 1) * px(ROW_STEP));
         int bottomTop = gridTop + rows * px(ROW_STEP);
         ((FrameLayout.LayoutParams) moveHint.getLayoutParams()).topMargin = gridTop - px(64);
-        root.setMinimumHeight(bottomTop + h + px(MARGIN));
+        root.setMinimumHeight(Math.max(bottomTop + h + px(MARGIN), px(1080))); // also holds the photo credit
 
         for (String pkg : apps) {
             Intent li = launchIntent(pm, pkg);
@@ -546,7 +852,7 @@ public class MainActivity extends Activity {
             addTile(root, pkg, label, banner, null, icon, gridX(i), gridY(i), w, h);
         }
 
-        // Bottom row: Play Store, HDMI inputs, Settings and Add app, six at most.
+        // Bottom row: Play Store, HDMI inputs, Settings and Add app, ten at most.
         int col = 0;
         boolean store = !apps.contains(PLAY_STORE) && launchIntent(pm, PLAY_STORE) != null;
         List<TvInputInfo> inputs = hdmiInputs();
@@ -600,19 +906,21 @@ public class MainActivity extends Activity {
             LinearLayout inner = new LinearLayout(this);
             inner.setOrientation(LinearLayout.VERTICAL);
             inner.setGravity(Gravity.CENTER);
+            // Icon, gap and label shrink with short tiles (many per row), so the label isn't cut off.
+            float s = Math.min(1f, h / (float) px(120));
             ImageView iv = new ImageView(this);
-            int size = lineIcon != null ? px(44) : px(64);
+            int size = Math.round((lineIcon != null ? px(44) : px(64)) * s);
             if (lineIcon != null) iv.setImageDrawable(new LineIcon(lineIcon));
             else if (appIcon != null) iv.setImageDrawable(fit(appIcon, size, size));
             inner.addView(iv, new LinearLayout.LayoutParams(size, size));
-            TextView t = text(px(24), 0xE0FFFFFF, regular);
+            TextView t = text(Math.round(px(24) * s), 0xE0FFFFFF, regular);
             t.setText(label);
             t.setSingleLine(true);
             t.setEllipsize(android.text.TextUtils.TruncateAt.END);
             t.setGravity(Gravity.CENTER);
-            t.setPadding(px(16), 0, px(16), 0);
+            t.setPadding(Math.round(px(16) * s), 0, Math.round(px(16) * s), 0);
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
-            lp.topMargin = px(12);
+            lp.topMargin = Math.round(px(12) * s);
             inner.addView(t, lp);
             card.addView(inner, new FrameLayout.LayoutParams(-1, -1));
         }
@@ -1531,7 +1839,10 @@ public class MainActivity extends Activity {
     }
 
     private TextClock clock(String f12, String f24, int px, int color, Typeface tf) {
-        TextClock c = new TextClock(this);
+        return clock(new TextClock(this), f12, f24, px, color, tf);
+    }
+
+    private TextClock clock(TextClock c, String f12, String f24, int px, int color, Typeface tf) {
         c.setFormat12Hour(f12);
         c.setFormat24Hour(f24);
         c.setTextSize(TypedValue.COMPLEX_UNIT_PX, px);

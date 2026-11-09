@@ -37,11 +37,25 @@ final class LineIcon extends Drawable {
     private final RectF arc = new RectF();
 
     LineIcon(int[] ops) {
+        this(ops, 0xEBFFFFFF);
+    }
+
+    // The same icon in another colour (ARGB), for the weather panel.
+    LineIcon(int[] ops, int color) {
         this.ops = ops;
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeCap(Paint.Cap.ROUND);
         paint.setStrokeJoin(Paint.Join.ROUND);
-        paint.setColor(0xEBFFFFFF);
+        paint.setColor(color);
+    }
+
+    private boolean shadow;
+
+    // A soft dark shadow under the lines, for icons drawn straight on the wallpaper.
+    // Hardware-drawn path shadows need Android 9; older TVs show the icon without it.
+    LineIcon withShadow() {
+        shadow = true;
+        return this;
     }
 
     @Override
@@ -49,6 +63,7 @@ final class LineIcon extends Drawable {
         if (ops == null) return;
         float s = getBounds().width() / 240f; // ops are in tenths of the 24-unit grid
         paint.setStrokeWidth(16 * s);
+        if (shadow) paint.setShadowLayer(24 * s, 0, 8 * s, 0xB3000000);
         path.reset();
         for (int i = 0; i < ops.length; ) {
             switch (ops[i]) {
