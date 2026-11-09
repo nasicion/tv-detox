@@ -525,7 +525,50 @@ HDMI tiles work the same way. Hold **OK** on one to **Rename** it — TV, PlaySt
 <summary><b>Can I change the background?</b></summary>
 <br>
 
-Yes. Pick the **Settings** tile, then **Wallpaper**. (**TV settings**, right under it, opens the TV's own settings.) There are fourteen gradients. Dark: Dusk (the default), Midnight, Plum, Forest, Graphite, Ocean and Ember. Bright: Sunset, Lagoon, Aurora, Coral, Iris, Meadow and Gold. The background changes as you move through the list; press **OK** to keep one, or **Back** to leave it as it was. They're colours only, no pictures, so every one is just as fast and uses the same memory.
+Yes. Pick the **Settings** tile, then **Wallpaper**. (**TV settings**, right under it, opens the TV's own settings.) There are fourteen gradients, plus **Weather** (photos that follow the weather and the time of day: see the next two questions). Dark: Dusk (the default), Midnight, Plum, Forest, Graphite, Ocean and Ember. Bright: Sunset, Lagoon, Aurora, Coral, Iris, Meadow and Gold. The background changes as you move through the list; press **OK** to keep one, or **Back** to leave it as it was. The gradients are colours only, no pictures, so every one is just as fast and uses the same memory.
+
+</details>
+
+<details>
+<summary><b>Can the home screen show the weather?</b></summary>
+<br>
+
+Yes. Under the clock it shows the weather now (icon, temperature and the conditions in words), then the next three days with their high and low. There is no background: the text and icons float on the wallpaper with a soft shadow. The forecast comes from [Open-Meteo](https://open-meteo.com) (free, no account), in Celsius, and is fetched again every 30 minutes. The conditions are translated to Spanish; other languages show them in English.
+
+By default the place comes from the TV's IP address, looked up once a day with [ipapi.co](https://ipapi.co). That service sees your public IP address; Open-Meteo only ever gets the rounded-off place. To pick the place yourself, or to turn the weather off:
+
+```sh
+WEATHER="52.52,13.41" sh install.sh <TV_IP>    # latitude,longitude
+WEATHER=off sh install.sh <TV_IP>               # no weather, and no lookup
+WEATHER=auto sh install.sh <TV_IP>              # back to the IP address
+```
+
+The weather needs the home screen to use the internet, so it asks Android for that one permission. The panel stays hidden until the first forecast arrives, so a TV that is offline just shows the clock.
+
+</details>
+
+<details>
+<summary><b>Can the wallpaper follow the weather and the time of day?</b></summary>
+<br>
+
+Yes, with photos of mountains and woods. The home screen looks for a photo named after the part of the day and the weather:
+
+- Part of the day: `morning`, `noon`, `afternoon` or `night`. They follow the real sunrise and sunset where you are: morning, noon and afternoon share the daylight (30, 35 and 35 percent), and night is the rest.
+- Weather: `clear`, `cloudy`, `rain`, `snow` or `fog`.
+
+So a rainy evening shows `night_rain.jpg`. If that photo is missing it tries `night_clear.jpg`, then the plain Dusk gradient. The photo is cropped to the screen, with a dark veil over it so the clock and tiles stay easy to read, and the photographer is credited at the bottom right.
+
+The TV never downloads the photos and holds no API key. A script on your computer downloads 20 photos from [Pixabay](https://pixabay.com) and copies them to the TV with adb:
+
+```sh
+PIXABAY_KEY=your-key python3 fetch-wallpapers.py <TV_IP>
+```
+
+The key is free: sign up at pixabay.com and it is shown on https://pixabay.com/api/docs/. It needs only `python3` and `adb`. The photos are saved in `out/wallpapers`, the searches are kept for 24 hours as Pixabay asks, and running it again picks the best matches again. A normal key gives photos 1280 pixels wide, so they are slightly soft on a 1080p TV; Pixabay's "full API access" gives 1920 pixels and the script uses them when it can. The searches are only a guide, so check the photos and swap any you don't like.
+
+You can also use your own pictures: copy JPEGs with those names to `/sdcard/Android/data/com.ansub.tvhome/files/wallpapers/` with `adb push`, and add a `credits.txt` with lines like `night_rain.jpg|Photographer name` if you want a credit shown.
+
+Once the folder has photos, **Weather** is the wallpaper unless you picked another one. Pick **Settings**, **Wallpaper**, then **Weather** to come back to it, or any gradient to leave it. To remove the photos, delete that folder.
 
 </details>
 
