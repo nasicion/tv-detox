@@ -45,6 +45,17 @@ Claude Code or Codex does the work. You just press OK on the remote.
 
 **[▶ Claude Made My Old Android TV Feel Brand New](https://www.youtube.com/watch?v=fP2SGGVsaB0)** · the full setup on a real TV, in 4 minutes.
 
+### What this fork adds
+
+<table>
+<tr>
+<td width="50%" valign="top"><img src="docs/home-screen.png" alt="The original TV Detox home screen: a clock, your apps and your inputs on a dark gradient" width="100%"><br><b>Original</b><br>A clock, your apps, your inputs. A dark gradient behind them.</td>
+<td width="50%" valign="top"><img src="docs/home-screen-weather.jpg" alt="This fork's home screen: a centred glass clock, the weather and a three-day forecast, on a mountain photo" width="100%"><br><b>With weather and wallpapers</b><br>A centred glass clock, the weather now and the next three days, ten tiles to a row, and a mountain or forest photo that follows the weather and the time of day.</td>
+</tr>
+</table>
+
+To set them up, see the questions **Can the home screen show the weather?** and **Can the wallpaper follow the weather and the time of day?** further down.
+
 ## Get started
 
 **1. Turn on developer mode on the TV.**
