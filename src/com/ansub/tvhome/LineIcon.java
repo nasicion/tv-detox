@@ -31,6 +31,13 @@ final class LineIcon extends Drawable {
     static final int[] PICTURE ={0, 30, 50, 1, 210, 50, 1, 210, 165, 1, 30, 165, 2, 0, 120, 165, 1, 120, 200,
             0, 80, 200, 1, 160, 200};
 
+    // Home Assistant tiles: an air conditioner blowing air, a camera, and a bolt for automations.
+    static final int[] AIRCON = {0, 30, 55, 1, 210, 55, 1, 210, 125, 1, 30, 125, 2, 0, 65, 100, 1, 175, 100,
+            0, 80, 155, 1, 70, 190, 0, 120, 155, 1, 120, 195, 0, 160, 155, 1, 170, 190};
+    static final int[] CAMERA = {0, 25, 75, 1, 155, 75, 1, 155, 165, 1, 25, 165, 2,
+            0, 155, 105, 1, 215, 75, 1, 215, 165, 1, 155, 135};
+    static final int[] BOLT = {0, 135, 25, 1, 65, 130, 1, 115, 130, 1, 100, 215, 1, 175, 105, 1, 125, 105, 2};
+
     private final int[] ops;
     private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Path path = new Path();

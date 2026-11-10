@@ -593,6 +593,43 @@ Once the folder has photos, **Weather** is the wallpaper unless you picked anoth
 </details>
 
 <details>
+<summary><b>Can it control my air conditioner and show my cameras (Home Assistant)?</b></summary>
+
+Yes, if you use [Home Assistant](https://www.home-assistant.io). Tiles show up on the bottom row, after **Add app**:
+
+- **Air conditioner:** the tile shows the room temperature, and its icon lights up while the unit runs. OK opens a panel: **−** and **+** change the temperature, and there's one button per mode the unit has (off, cool, heat, dry, fan…).
+- **Camera:** OK shows it live, full screen, the way Home Assistant streams it to its own dashboards (MJPEG). This works with RTSP cameras too. Left and right go to the TV's other cameras, and Back closes it. A Xiaomi Mi Box 4 shows a 2K camera at about 9 frames a second.
+- **Camera pop-up:** give a camera `"popup": "binary_sensor.…"` (a sensor or a list), and when that sensor turns on, the camera shows live in a corner window over whatever is playing. A person detection sensor works well. The window closes by itself after `popup_seconds` (30 by default). While it's up, OK opens the camera full screen and any other button closes it. The TV checks each sensor once a second, so a detection shorter than that can be missed. install.sh allows the home screen to "display over other apps", which the window needs.
+- **Automations:** OK runs it. Automations are triggered, scripts and scenes start, buttons are pressed, and anything else, like a light or a switch, is toggled.
+
+To set it up, copy `homeassistant.example.json` to `homeassistant.json` next to `install.sh`, fill it in, and run `install.sh` for each TV. The file holds the server address, a long-lived access token (create one in Home Assistant under your profile, **Security**), and a list per TV under `tvs`. Each TV gets its own `climate`, `cameras` and `automations`:
+
+```json
+{
+  "server": "http://192.168.1.10:8123",
+  "token": "…",
+  "tvs": {
+    "living-room": {
+      "address": "192.168.1.20",
+      "climate": [{"entity": "climate.living_room", "name": "Living room AC"}],
+      "cameras": [{"entity": "camera.front_door", "popup": "binary_sensor.front_door_person_detection"}],
+      "automations": [{"entity": "scene.movie_time", "name": "Movie time"}]
+    },
+    "bedroom": { "address": "192.168.1.21", "cameras": ["camera.front_door"] }
+  }
+}
+```
+
+- **Which part a TV gets:** the TV's `address` must match the address you give `install.sh`. Otherwise use the name: `HA_TV=bedroom sh install.sh <TV_IP>`. A TV that matches nothing gets `default`, if there is one.
+- **Entries:** an entry is an entity ID, or `{"entity": …, "name": …}` for a shorter tile name. Without a name, the tile uses Home Assistant's.
+- **What's kept on the TV:** install.sh sends the file to the app, and the app keeps only that TV's part and the token, in its own private storage.
+- **Other options:** `HA_CONFIG=other.json` uses another file, and `HOMEASSISTANT=off` takes the tiles away.
+
+`homeassistant.json` is in `.gitignore`, because it holds your token. Give the token to a Home Assistant user made just for the TV, not to an admin.
+
+</details>
+
+<details>
 <summary><b>Can I get Wi-Fi and Bluetooth one press away?</b></summary>
 <br>
 

@@ -14,6 +14,8 @@ final class Strings {
         "Use the arrows to move it, then press OK", "Every app is already here", "Add an app", "Replace %s", "Wallpaper", "TV settings", "Brightness",
         "Rename", "Show hidden inputs", "TV", "Laptop", "PC", "Blu-ray", "Soundbar", "Type a name…",
         "Clear", "Partly cloudy", "Fog", "Snow", "Thunderstorm", "Rain", "Cloudy",
+        "Room", "Off", "Cool", "Heat", "Dry", "Fan", "Heat/Cool", "Auto",
+        "Connecting…", "Couldn't reach Home Assistant", "Running…", "Done",
     };
 
     // Keyed by language ("de"), or language-country ("zh-TW") where a country writes it differently.
@@ -37,6 +39,8 @@ final class Strings {
             "Usa las flechas para moverla y pulsa OK", "Todas las apps ya están aquí", "Añadir una app", "Reemplazar %s", "Fondo de pantalla", "Ajustes de la TV", "Brillo",
             "Renombrar", "Mostrar entradas ocultas", "TV", "Portátil", "PC", "Blu-ray", "Barra de sonido", "Escribe un nombre…",
             "Despejado", "Parcialmente nublado", "Niebla", "Nieve", "Tormenta", "Lluvia", "Nublado",
+            "Ambiente", "Apagado", "Frío", "Calor", "Secar", "Ventilar", "Frío/Calor", "Auto",
+            "Conectando…", "No se pudo conectar con Home Assistant", "Ejecutando…", "Listo",
         });
         LANGS.put("fr", new String[] {
             "Paramètres", "Ajouter une app", "Réseau", "Hors ligne", "Son", "Image",

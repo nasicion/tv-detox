@@ -1,0 +1,48 @@
+{
+  "server": "http://192.168.1.10:8123",
+  "token": "paste a long-lived access token here (Home Assistant: your profile > Security)",
+  "tvs": {
+    "living-room": {
+      "address": "192.168.1.20",
+      "climate": [
+        {
+          "entity": "climate.living_room",
+          "name": "Living room AC"
+        }
+      ],
+      "cameras": [
+        {
+          "entity": "camera.front_door",
+          "name": "Front door",
+          "popup": "binary_sensor.front_door_person_detection",
+          "popup_seconds": 30
+        },
+        "camera.garden"
+      ],
+      "automations": [
+        {
+          "entity": "scene.movie_time",
+          "name": "Movie time"
+        },
+        "script.good_night",
+        "automation.porch_lights"
+      ]
+    },
+    "bedroom": {
+      "address": [
+        "192.168.1.21"
+      ],
+      "climate": [
+        "climate.bedroom"
+      ],
+      "cameras": [
+        "camera.front_door"
+      ]
+    },
+    "default": {
+      "cameras": [
+        "camera.front_door"
+      ]
+    }
+  }
+}

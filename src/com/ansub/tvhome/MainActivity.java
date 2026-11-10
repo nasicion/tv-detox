@@ -183,6 +183,21 @@ public class MainActivity extends Activity {
     // key-up to the tile still focused here, so a key-up only opens the app it went down on (#30).
     private String okDownKey;
 
+    // Home Assistant tiles (null: none set up for this TV), and their labels and icons, kept to show
+    // what the air conditioners are doing.
+    private HomeAssistant ha;
+    private HomeAssistantViews haViews;
+    private final Map<String, TextView> haLabels = new HashMap<>();
+    private final Map<String, ImageView> haIcons = new HashMap<>();
+    private static final String PREF_HA = "homeassistant";
+    private static final long HA_POLL_MS = 30 * 1000L;
+    private final Runnable haTick = new Runnable() {
+        @Override public void run() {
+            refreshHomeAssistant();
+            getWindow().getDecorView().postDelayed(this, HA_POLL_MS);
+        }
+    };
+
     private LinearLayout weatherPanel;
     private ImageView weatherNowIcon;
     private TextView weatherNow, weatherCond;
@@ -294,12 +309,14 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (haViews != null) haViews.close(); // Home closes the air conditioner panel or the camera
         // A clock change needs the whole page rebuilt; a new app list only needs the tiles.
         boolean clock = intent != null && intent.hasExtra("clock");
         if (saveConfig(intent)) {
             if (clock) recreate();
             else buildTiles();
             if (intent.hasExtra("weather")) refreshWeather(true);
+            if (intent.hasExtra("ha")) refreshHomeAssistant();
         }
     }
 
@@ -313,7 +330,8 @@ public class MainActivity extends Activity {
         String clock = intent == null ? null : intent.getStringExtra("clock");
         String fake = intent == null ? null : intent.getStringExtra("fakeinputs");
         String weather = intent == null ? null : intent.getStringExtra("weather");
-        if (apps == null && quick == null && clock == null && fake == null && weather == null) return false;
+        String haFile = intent == null ? null : intent.getStringExtra("ha");
+        if (apps == null && quick == null && clock == null && fake == null && weather == null && haFile == null) return false;
         SharedPreferences prefs = getSharedPreferences(PREFS, 0);
         String stamp = intent.getStringExtra("stamp");
         if (stamp != null && stamp.equals(prefs.getString("stamp", null))) return false;
@@ -362,6 +380,22 @@ public class MainActivity extends Activity {
                 else e.remove(PREF_WEATHER);
             }
         }
+        // Home Assistant: install.sh sends the whole homeassistant.json (base64) and this TV's name or
+        // address; only this TV's part is kept, in the app's private storage. "off" takes the tiles away.
+        if (haFile != null) {
+            haFile = haFile.trim();
+            String mine = null;
+            if (!haFile.equalsIgnoreCase("off")) try {
+                String json = new String(android.util.Base64.decode(haFile, android.util.Base64.DEFAULT), "UTF-8");
+                org.json.JSONObject o = HomeAssistant.pick(json, intent.getStringExtra("ha_tv"));
+                if (o != null) mine = o.toString();
+            } catch (Exception ex) {
+                android.util.Log.w("tvhome", "homeassistant.json couldn't be read: " + ex.getMessage());
+            }
+            if (mine != null) e.putString(PREF_HA, mine);
+            else e.remove(PREF_HA);
+            android.util.Log.i("tvhome", "Home Assistant: " + (mine != null ? "set up" : "none") + " for " + intent.getStringExtra("ha_tv"));
+        }
         e.apply();
         dirty = true;
         return true;
@@ -405,6 +439,14 @@ public class MainActivity extends Activity {
         getWindow().getDecorView().postDelayed(homeOk, 1500);
         refreshWeather(false);
         getWindow().getDecorView().postDelayed(weatherTick, Weather.MAX_AGE_MS);
+        getWindow().getDecorView().removeCallbacks(haTick);
+        haTick.run();
+        // OK on a camera pop-up (CameraWatch): that camera, full screen.
+        String cam = getIntent() == null ? null : getIntent().getStringExtra("camera");
+        if (cam != null) {
+            getIntent().removeExtra("camera");
+            if (ha != null) openHomeAssistant(cam);
+        }
     }
 
     private final Runnable homeOk = () -> HomeButton.onHomeOk(this);
@@ -415,6 +457,7 @@ public class MainActivity extends Activity {
         // Left normally (an app or Settings opened), so it didn't crash.
         getWindow().getDecorView().removeCallbacks(homeOk);
         getWindow().getDecorView().removeCallbacks(weatherTick);
+        getWindow().getDecorView().removeCallbacks(haTick);
         HomeButton.onHomeOk(this);
     }
 
@@ -863,7 +906,28 @@ public class MainActivity extends Activity {
         for (TvInputInfo in : inputs)
             addTile(root, in.getId(), inputLabel(in), null, LineIcon.HDMI, null, m + col++ * (w + g), bottomTop, w, h);
         addTile(root, SETTINGS, Strings.t("Settings"), null, LineIcon.SETTINGS, null, m + col++ * (w + g), bottomTop, w, h);
-        addTile(root, ADD, Strings.t("Add app"), null, LineIcon.PLUS, null, m + col * (w + g), bottomTop, w, h);
+        addTile(root, ADD, Strings.t("Add app"), null, LineIcon.PLUS, null, m + col++ * (w + g), bottomTop, w, h);
+
+        // Home Assistant: air conditioners, cameras, then automations, after Add app; more than fit
+        // go on a row of their own underneath.
+        ha = HomeAssistant.load(prefs().getString(PREF_HA, null));
+        haLabels.clear();
+        haIcons.clear();
+        int haTop = bottomTop;
+        if (ha != null) {
+            if (haViews == null) haViews = new HomeAssistantViews(this, scale, regular, semibold);
+            for (HomeAssistant.Item it : ha.items) {
+                if (col == PER_ROW) { col = 0; haTop += px(ROW_STEP); }
+                int[] icon = it.section.equals(HomeAssistant.CLIMATE) ? LineIcon.AIRCON
+                        : it.section.equals(HomeAssistant.CAMERAS) ? LineIcon.CAMERA : LineIcon.BOLT;
+                View card = addTile(root, it.key(), it.name, null, icon, null, m + col++ * (w + g), haTop, w, h);
+                ViewGroup inner = (ViewGroup) ((ViewGroup) card).getChildAt(0);
+                haIcons.put(it.key(), (ImageView) inner.getChildAt(0));
+                haLabels.put(it.key(), (TextView) inner.getChildAt(1));
+            }
+            root.setMinimumHeight(Math.max(haTop + h + px(MARGIN), px(1080)));
+        }
+        CameraWatch.sync(this, ha);
 
         // Plain icons at the top right, level with the date: any settings shortcuts picked, then the
         // network icon. Added last, so the first app keeps first focus; Up from the apps reaches them.
@@ -889,7 +953,68 @@ public class MainActivity extends Activity {
         if (restore != null) restore.requestFocus();
     }
 
-    private void addTile(ViewGroup parent, final String key, String label, Drawable banner, int[] lineIcon, Drawable appIcon,
+    // OK on a Home Assistant tile: the air conditioner's panel, the camera full screen (Left and Right
+    // go through this TV's other cameras), or the automation runs, with a word on the tile to say so.
+    private void openHomeAssistant(final String key) {
+        if (ha == null) return;
+        final HomeAssistant.Item it = ha.item(key);
+        if (it == null) return;
+        if (it.section.equals(HomeAssistant.CLIMATE)) {
+            haViews.climate(ha, it);
+        } else if (it.section.equals(HomeAssistant.CAMERAS)) {
+            List<HomeAssistant.Item> cams = ha.items(HomeAssistant.CAMERAS);
+            haViews.camera(ha, cams, cams.indexOf(it));
+        } else {
+            final HomeAssistant h = ha;
+            final TextView label = haLabels.get(key);
+            if (label != null) label.setText(Strings.t("Running…"));
+            new Thread(() -> {
+                String said;
+                try { h.run(it.entity); said = "Done"; }
+                catch (Exception e) { said = "Couldn't reach Home Assistant"; }
+                final String word = Strings.t(said);
+                runOnUiThread(() -> {
+                    if (label == null) return;
+                    label.setText(word);
+                    label.postDelayed(() -> label.setText(it.name), 2500);
+                });
+            }).start();
+        }
+    }
+
+    // Names from Home Assistant for tiles the file didn't name (once), and what each air conditioner
+    // is doing: its tile shows the room temperature, and its icon is lit while it runs.
+    private void refreshHomeAssistant() {
+        final HomeAssistant h = ha;
+        if (h == null) return;
+        new Thread(() -> {
+            for (final HomeAssistant.Item it : h.items) {
+                boolean climate = it.section.equals(HomeAssistant.CLIMATE);
+                if (!climate && (it.named || !it.name.equals(HomeAssistant.pretty(it.entity)))) continue;
+                try {
+                    org.json.JSONObject s = h.state(it.entity);
+                    org.json.JSONObject at = s.optJSONObject("attributes");
+                    if (at == null) at = new org.json.JSONObject();
+                    if (!it.named && at.has("friendly_name")) it.name = at.optString("friendly_name");
+                    final String state = s.optString("state");
+                    final double now = at.optDouble("current_temperature", Double.NaN);
+                    runOnUiThread(() -> {
+                        if (ha != h) return;
+                        TextView label = haLabels.get(it.key());
+                        ImageView icon = haIcons.get(it.key());
+                        if (label != null) label.setText(climate && !Double.isNaN(now)
+                                ? HomeAssistantViews.number(now) + "° · " + it.name : it.name);
+                        if (icon != null && climate) {
+                            boolean on = !"off".equals(state) && !"unavailable".equals(state);
+                            icon.setImageDrawable(on ? new LineIcon(LineIcon.AIRCON, 0xFF7FD3FF) : new LineIcon(LineIcon.AIRCON));
+                        }
+                    });
+                } catch (Exception ignored) {} // the tile keeps what it showed
+            }
+        }).start();
+    }
+
+    private View addTile(ViewGroup parent, final String key, String label, Drawable banner, int[] lineIcon, Drawable appIcon,
                          int x, int y, int w, int h) {
         FrameLayout card = new FrameLayout(this);
         final GradientDrawable bg = new GradientDrawable();
@@ -1001,6 +1126,7 @@ public class MainActivity extends Activity {
         }
         parent.addView(wrap, at(x, y, w, -2));
         tiles.add(card);
+        return card;
     }
 
     // The focus lift: the view grows and rises while its background fades and rounds off. A new
@@ -1102,6 +1228,9 @@ public class MainActivity extends Activity {
             return;
         } else if (key.startsWith(QUICK)) {
             openQuick(key.substring(QUICK.length()));
+            return;
+        } else if (key.startsWith("ha:")) {
+            openHomeAssistant(key);
             return;
         } else {
             i = launchIntent(getPackageManager(), key);

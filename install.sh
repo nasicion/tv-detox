@@ -10,6 +10,11 @@
 #   (WEATHER unset or auto: the place comes from the TV's IP address, via ipapi.co)
 #   WALLPAPERS=off sh install.sh <TV_IP>         don't copy the weather wallpaper photos (about 5 MB)
 #   WALLPAPERS=reset sh install.sh <TV_IP>       replace photos already on the TV with these
+#   (homeassistant.json next to this script, if there is one, adds Home Assistant tiles: air
+#   conditioners, cameras and automations. See homeassistant.example.json. Each TV gets its own part
+#   of the file, found by its address or by HA_TV=<name>.)
+#   HA_CONFIG=other.json sh install.sh <TV_IP>   use another file
+#   HOMEASSISTANT=off sh install.sh <TV_IP>      take the Home Assistant tiles away
 #   FAKE_INPUT=1 sh install.sh <emulator>        testing only: add a throwaway TV input, so an
 #                                                emulator with no HDMI ports still has one to draw
 #
@@ -85,7 +90,17 @@ if [ "$FAKE_INPUT" = 1 ]; then
   adb -s "$TV" install -r "$FAKE" >/dev/null
 fi
 
-if [ -n "$APPS" ] || [ -n "$QUICK" ] || [ -n "$CLOCK" ] || [ -n "$WEATHER" ] || [ -n "$FAKE_INPUT" ]; then
+# Home Assistant: the whole file goes to the app (base64, so no quoting can break it) with this TV's
+# name or address; the app keeps only this TV's part, with the token, in its own private storage.
+HA_FILE=${HA_CONFIG:-homeassistant.json}
+HA=
+if [ "$HOMEASSISTANT" = off ]; then HA=off
+elif [ -f "$HA_FILE" ]; then
+  HA=$(base64 < "$HA_FILE" | tr -d '\n')
+  echo "Setting up Home Assistant from $HA_FILE for \"${HA_TV:-${TARGET%%:*}}\"."
+fi
+
+if [ -n "$APPS" ] || [ -n "$QUICK" ] || [ -n "$CLOCK" ] || [ -n "$WEATHER" ] || [ -n "$FAKE_INPUT" ] || [ -n "$HA" ]; then
   # The stamp makes the app apply this list once, even if Android later replays this start.
   set -- --es stamp "$(date +%s)"
   [ -n "$APPS" ] && set -- "$@" --es apps "\"$APPS\""
@@ -93,7 +108,13 @@ if [ -n "$APPS" ] || [ -n "$QUICK" ] || [ -n "$CLOCK" ] || [ -n "$WEATHER" ] || 
   [ -n "$CLOCK" ] && set -- "$@" --es clock "\"$CLOCK\""
   [ -n "$WEATHER" ] && set -- "$@" --es weather "\"$WEATHER\""
   [ "$FAKE_INPUT" = 1 ] && set -- "$@" --es fakeinputs 1
+  [ -n "$HA" ] && set -- "$@" --es ha "$HA" --es ha_tv "\"${HA_TV:-${TARGET%%:*}}\""
   adb -s "$TV" shell am start -n com.ansub.tvhome/.MainActivity "$@" >/dev/null
+fi
+# Camera pop-ups need "display over other apps". Only asked for when the file has a "popup".
+if [ -n "$HA" ] && [ "$HA" != off ] && grep -q '"popup"' "$HA_FILE"; then
+  adb -s "$TV" shell appops set com.ansub.tvhome SYSTEM_ALERT_WINDOW allow >/dev/null 2>&1 \
+    || echo "Couldn't allow camera pop-ups over other apps; on the TV, allow \"Display over other apps\" for Home." >&2
 fi
 
 ME=com.ansub.tvhome/.MainActivity

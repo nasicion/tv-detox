@@ -7,6 +7,11 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <!-- Only for the weather panel: the forecast is fetched from Open-Meteo. -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Only for camera pop-ups (Home Assistant): a corner window over the app in front, kept going by a
+         foreground service. install.sh grants "display over other apps" when a camera has "popup". -->
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Android 11+ only shows apps a home screen asks to see: TV apps and normal apps. -->
     <queries>
         <intent>
@@ -35,7 +40,8 @@
     <uses-permission android:name="android.permission.REQUEST_DELETE_PACKAGES" />
     <uses-feature android:name="android.software.leanback" android:required="false" />
     <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
-    <application android:label="Home" android:allowBackup="false" android:banner="@drawable/banner" android:icon="@drawable/icon"
+    <!-- usesCleartextTraffic: Home Assistant is usually reached on the local network over plain http. -->
+    <application android:label="Home" android:allowBackup="false" android:usesCleartextTraffic="true" android:banner="@drawable/banner" android:icon="@drawable/icon"
         android:theme="@android:style/Theme.Material.NoActionBar.Fullscreen">
         <activity android:name=".MainActivity"
             android:exported="true"
@@ -54,6 +60,10 @@
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
         </activity>
+        <service android:name=".CameraWatch" android:exported="false" android:foregroundServiceType="specialUse">
+            <property android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows a Home Assistant camera when its sensor detects someone" />
+        </service>
         <!-- Opt-in: makes Home open this home screen where the TV's own has to stay on (Google TV). -->
         <service android:name=".HomeButton" android:label="Home button" android:exported="true"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE">
